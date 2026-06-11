@@ -1,0 +1,14 @@
+# Git ignore
+__pycache__/
+*.pyc
+*.pyo
+x-cookies.json
+*.cookies.json
+.env
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.DS_Store
+Thumbs.db
