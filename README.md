@@ -105,4 +105,4 @@ That's it!
 
 ## 📄 License
 
-MIT © Anas Jadoon
+MIT © Muhammad Anas
