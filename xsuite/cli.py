@@ -2,9 +2,12 @@
 CLI module — interactive command-line interface for x-suite.
 
 Usage:
-    python -m xsuite            # interactive mode
-    python -m xsuite delete     # skip prompt, go straight to repost deletion
-    python -m xsuite unfollow   # skip prompt, go straight to unfollow
+    python -m xsuite              # interactive mode
+    python -m xsuite delete       # skip prompt, go straight to repost deletion
+    python -m xsuite unfollow     # skip prompt, go straight to unfollow (interactive select)
+    python -m xsuite unfollow --all  # unfollow everyone without scanning
+    python -m xsuite clean        # skip prompt, go straight to tweet deletion (interactive select)
+    python -m xsuite clean --all     # delete all tweets without scanning
 """
 
 import sys
@@ -13,8 +16,9 @@ import argparse
 
 from . import __version__
 from .auth import login
-from .deleter import run as run_deleter
-from .unfollower import run as run_unfollower
+from .bulk_repost_deleter import run as run_deleter
+from .bulk_unfollower import run as run_unfollower
+from .bulk_post_deleter import run as run_cleaner
 
 
 BANNER = r"""
@@ -52,16 +56,39 @@ def _prompt_action() -> str:
     """Ask which action the user wants to perform."""
     print("\n  Available actions:")
     print("    [1] Undo all reposts (delete)")
-    print("    [2] Unfollow everyone")
+    print("    [2] Unfollow accounts — scan & select, or --all to unfollow everyone")
+    print("    [3] Delete tweets — scan & select, or --all to wipe everything")
     print("    [q] Quit")
     while True:
-        choice = input("\n  Choose an option [1/2/q]: ").strip().lower()
+        choice = input("\n  Choose an option [1/2/3/q]: ").strip().lower()
         if choice in ("1", "delete"):
             return "delete"
         if choice in ("2", "unfollow"):
             return "unfollow"
+        if choice in ("3", "clean"):
+            return "clean"
         if choice in ("q", "quit", "exit"):
             return "quit"
+        print("  [!] Invalid choice. Enter 1, 2, 3, or q.")
+
+
+def _prompt_mode(action_name: str) -> bool:
+    """Ask whether to scan & select or blast everything.
+
+    Returns True for 'all' mode, False for scan & select.
+    """
+    print(f"\n  How do you want to {action_name}?")
+    print("    [1] Scan & select — preview before deleting/unfollowing")
+    print("    [2] Blast everything — no preview, just do it all")
+    print("    [q] Cancel")
+    while True:
+        choice = input("\n  Choose an option [1/2/q]: ").strip().lower()
+        if choice in ("1", "scan", "select"):
+            return False
+        if choice in ("2", "all", "blast", "everything"):
+            return True
+        if choice in ("q", "quit", "cancel"):
+            return None
         print("  [!] Invalid choice. Enter 1, 2, or q.")
 
 
@@ -73,7 +100,7 @@ def main():
     parser.add_argument(
         "action",
         nargs="?",
-        choices=["delete", "unfollow"],
+        choices=["delete", "unfollow", "clean"],
         help="Action to perform (if omitted, runs in interactive mode).",
     )
     parser.add_argument(
@@ -90,6 +117,18 @@ def main():
         help="Run Chrome in headless mode (no GUI).",
     )
     parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="all_items",
+        help="Delete/unfollow EVERYTHING without scanning or selecting (skip interactive list).",
+    )
+    parser.add_argument(
+        "--limit", "-l",
+        type=int,
+        default=None,
+        help="Number of recent items to scan before showing the selection list (default: prompted interactively).",
+    )
+    parser.add_argument(
         "--version", "-v",
         action="version",
         version=f"x-suite v{__version__}",
@@ -101,12 +140,21 @@ def main():
 
     # --- Resolve action ---
     action = args.action
+    from_cli = action is not None  # was the action passed on the command line?
     if action is None:
         action = _prompt_action()
 
     if action == "quit":
         print("\n  Goodbye!")
         sys.exit(0)
+
+    # --- Interactive mode: ask scan vs blast if no --all was given ---
+    if not from_cli and action in ("unfollow", "clean") and not args.all_items:
+        result = _prompt_mode("unfollow everyone" if action == "unfollow" else "delete all tweets")
+        if result is None:
+            print("\n  [*] Cancelled.")
+            sys.exit(0)
+        args.all_items = result
 
     # --- Resolve username ---
     username = args.username
@@ -128,8 +176,11 @@ def main():
             count = run_deleter(username, driver)
             label = "reposts undone"
         elif action == "unfollow":
-            count = run_unfollower(username, driver)
+            count = run_unfollower(username, driver, all_following=args.all_items, limit=args.limit)
             label = "accounts unfollowed"
+        elif action == "clean":
+            count = run_cleaner(username, driver, all_posts=args.all_items, limit=args.limit)
+            label = "tweets deleted"
 
         print(f"\n[+] Done! Total {label}: {count}")
 

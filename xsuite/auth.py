@@ -84,23 +84,53 @@ def inject_session(driver: webdriver.Chrome, cookies: list[dict]) -> None:
     """Navigate to x.com, inject cookies, and refresh to authenticate."""
     print("[*] Navigating to x.com and injecting session cookies...")
     driver.get("https://x.com")
+    time.sleep(2)
 
+    injected = 0
     for cookie in cookies:
         cookie_dict = {
             "name": cookie["name"],
             "value": cookie["value"],
-            "domain": ".x.com",
-            "secure": cookie.get("secure", True),
         }
-        # Handle optional fields that may cause errors
-        for key in ("path", "expiry", "sameSite"):
-            if key in cookie:
-                cookie_dict[key] = cookie[key]
+
+        # Domain — use the original, but ensure it's x.com related
+        domain = cookie.get("domain", ".x.com")
+        if "x.com" in domain or "twitter.com" in domain:
+            cookie_dict["domain"] = domain
+
+        # Path
+        if "path" in cookie:
+            cookie_dict["path"] = cookie["path"]
+
+        # Expiry — Cookie-Editor uses "expirationDate" (float Unix timestamp),
+        # Selenium expects "expiry" (int Unix timestamp).
+        if "expirationDate" in cookie:
+            cookie_dict["expiry"] = int(cookie["expirationDate"])
+        elif "expiry" in cookie:
+            cookie_dict["expiry"] = int(cookie["expiry"])
+
+        # Secure
+        if "secure" in cookie:
+            cookie_dict["secure"] = bool(cookie["secure"])
+
+        # sameSite — Cookie-Editor uses "no_restriction" / "lax" / "strict",
+        # Selenium expects "None" / "Lax" / "Strict".
+        if "sameSite" in cookie and cookie["sameSite"] is not None:
+            samesite = str(cookie["sameSite"]).lower()
+            if samesite in ("no_restriction", "none"):
+                cookie_dict["sameSite"] = "None"
+            elif samesite == "lax":
+                cookie_dict["sameSite"] = "Lax"
+            elif samesite == "strict":
+                cookie_dict["sameSite"] = "Strict"
+
         try:
             driver.add_cookie(cookie_dict)
-        except Exception:
-            pass  # Some cookies may be rejected; this is harmless
+            injected += 1
+        except Exception as e:
+            print(f"    [!] Could not add cookie '{cookie['name']}': {e}")
 
+    print(f"[*] Injected {injected}/{len(cookies)} cookies.")
     driver.refresh()
     time.sleep(3)
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xsuite"
-version = "1.0.0"
+version = "1.1.0"
 description = "A modular CLI toolkit for X.com (Twitter) account management"
 readme = "README.md"
 license = {text = "MIT"}
